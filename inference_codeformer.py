@@ -73,6 +73,7 @@ if __name__ == '__main__':
     parser.add_argument('--bg_tile', type=int, default=400, help='Tile size for background sampler. Default: 400')
     parser.add_argument('--suffix', type=str, default=None, help='Suffix of the restored faces. Default: None')
     parser.add_argument('--save_video_fps', type=int, default=24, help='Frame rate for saving video. Default: 24')
+    parser.add_argument('--mosaic_ratio', type=float, default=0.1, help='Mosaic ratio for the detected faces. Default: 0.1')
 
     args = parser.parse_args()
 
@@ -182,9 +183,15 @@ if __name__ == '__main__':
             face_helper.align_warp_face()
 
         # face restoration for each cropped face
+        def add_mosaic(src, ratio=0.1):
+            small = cv2.resize(src, None, fx=ratio, fy=ratio, interpolation=cv2.INTER_NEAREST)
+            return cv2.resize(small, src.shape[:2][::-1], interpolation=cv2.INTER_NEAREST)
+        mosaic_faces = []
         for idx, cropped_face in enumerate(face_helper.cropped_faces):
             # prepare data
-            cropped_face_t = img2tensor(cropped_face / 255., bgr2rgb=True, float32=True)
+            mosaic = add_mosaic(cropped_face)
+            mosaic_faces.append(mosaic)
+            cropped_face_t = img2tensor(mosaic / 255., bgr2rgb=True, float32=True)
             normalize(cropped_face_t, (0.5, 0.5, 0.5), (0.5, 0.5, 0.5), inplace=True)
             cropped_face_t = cropped_face_t.unsqueeze(0).to(device)
 
@@ -217,7 +224,10 @@ if __name__ == '__main__':
                 restored_img = face_helper.paste_faces_to_input_image(upsample_img=bg_img, draw_box=args.draw_box)
 
         # save faces
-        for idx, (cropped_face, restored_face) in enumerate(zip(face_helper.cropped_faces, face_helper.restored_faces)):
+        for idx, (cropped_face, restored_face, mosaic_face) in enumerate(zip(face_helper.cropped_faces, face_helper.restored_faces, mosaic_faces)):
+            # save mosaic face
+            mosaic_face_path = os.path.join(result_root, 'mosaic_faces', f'{basename}_{idx:02d}.png')
+            imwrite(mosaic_face, mosaic_face_path)
             # save cropped face
             if not args.has_aligned: 
                 save_crop_path = os.path.join(result_root, 'cropped_faces', f'{basename}_{idx:02d}.png')
